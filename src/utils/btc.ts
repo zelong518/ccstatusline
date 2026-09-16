@@ -184,7 +184,7 @@ function getProxyUrl(): string | null {
     return proxyUrl?.length ? proxyUrl : null;
 }
 
-function httpGetJson(hostname: string, pathName: string): Promise<unknown> {
+export function httpGetJson(hostname: string, pathName: string): Promise<unknown> {
     return new Promise((resolve) => {
         let settled = false;
         const finish = (value: unknown) => {

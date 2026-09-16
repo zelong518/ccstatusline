@@ -305,6 +305,7 @@ This fork adds a `Crypto` widget category: a live spot price, an hourly sparklin
 | --- | --- | --- |
 | Crypto Price | `btc-price` | `BTC $75,703 ▼1.66%` - spot price and 24h change |
 | Crypto Chart | `btc-trend` | `⠒⠒⠚⠉⠉⠙⠒⠒⠲⠤⢤⣤⣀⣀` - a braille line at 2x4 dots per cell, or candles (`▄▅▄▃▃▄▆`), or a plain sparkline |
+| Crypto Accuracy | `btc-accuracy` | `Hit: 62% (13/21) vs 48%` - how often the advice was right, against the best fixed answer |
 | Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 18:37 · 12m ⟳` - clickable: opens the full report, `⟳` re-asks now |
 
 Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds under `~/.cache/ccstatusline/`. A venue that stops answering gets a 30-second backoff instead of a network round trip per render, and the last good quote keeps being drawn.
@@ -356,6 +357,21 @@ Claude Code redraws the status line on events, so between two messages a price a
 
 While an ask is running the verdict shows `· asking…` rather than an age, so a click on `⟳` visibly does something during the ~30s it takes.
 
+### Was it right?
+
+A verdict nobody scores is just vibes, so every answer goes into a ledger next to `settings.json` (not `~/.cache`: it is the one piece of state here that would hurt to lose), and once its horizon has passed the price that actually happened settles it.
+
+- **Horizons** 24h, 72h (default) and 7d, because a swing call is not settled by the next hour.
+- **What counts as right**: a move of `2%` decides the direction. BUY has to get that move up, SELL that move down, and HOLD has to see the market stay inside the band. A call that was directionally right but went nowhere is not a win.
+- **One call per 6h window** in the stats. The widget asks every half hour; forty-eight near-identical calls a day would drown out the handful of genuinely different ones, and flatter the rate every time the market spends a day doing nothing.
+- **The baseline is the point.** Next to the hit rate sits the best score a single fixed answer - always BUY, always HOLD, always SELL - would have got on exactly the same calls. In a flat market "always HOLD" scores extremely well, so a hit rate that does not clear that bar carries no information, and the widget only turns green when it does.
+
+```bash
+ccstatusline --btc-score BTCUSDT     # the whole record, horizon by horizon
+```
+
+The report page carries the same table plus the recent calls, each with what the price did and the catalyst that was cited at the time. Scoring runs in the background when a horizon comes due; nothing blocks the render.
+
 ### Options
 
 Press the listed key on the widget in the TUI, or set `metadata` directly in `settings.json`:
@@ -377,6 +393,9 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `g` | `time` | advice | `none` - or `clock` (18:37), `age` (12m), `both` |
 | `l` | `lang` | advice | `zh` - or `en` |
 | - | `model` | advice | `claude-haiku-4-5-20251001` |
+| `n` | `horizon` | accuracy | `72h` - or `24h`, `7d` |
+| `p` | `sample` | accuracy | `6` hours - at most one call per window counts |
+| `f` | `baseline` | accuracy | off - show the always-same-answer rate next to yours |
 
 `CCSTATUSLINE_CLAUDE_BIN` overrides how the `claude` executable is found; `CCSTATUSLINE_BTC_DEBUG=1` writes the raw answer to `~/.cache/ccstatusline/btc-advice-raw.txt`.
 

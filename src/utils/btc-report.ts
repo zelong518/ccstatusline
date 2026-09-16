@@ -25,6 +25,14 @@ import {
     readAdviceOptions,
     readCachedBtcAdvice
 } from './btc-advice';
+import type { Ledger } from './btc-ledger';
+import {
+    HORIZONS,
+    hasDueScoring,
+    readLedger,
+    scheduleScoring,
+    summarize
+} from './btc-ledger';
 
 // A status line cannot hold a report, and a terminal cannot hold a button - it
 // can only open a URL. So the widget links to a small local server: one page
@@ -204,7 +212,58 @@ function renderMarketSection(market: BtcMarketData | null): string {
     return `<table>${rows.map(([key, value]) => `<tr><th>${key}</th><td>${value}</td></tr>`).join('')}</table>`;
 }
 
-function renderPage(symbol: string, market: BtcMarketData | null, advice: BtcAdvice | null, intervalMinutes: number, autoRefresh: boolean): string {
+function renderAccuracySection(ledger: Ledger): string {
+    if (ledger.entries.length === 0) {
+        return '<p class="muted">还没有记录。每次询问都会入账，到期后用真实行情结算。</p>';
+    }
+
+    const percent = (value: number | null): string => (value === null ? '—' : `${value.toFixed(0)}%`);
+    const rows = HORIZONS.map((horizon) => {
+        const summary = summarize(ledger, { horizonId: horizon.id });
+        const edge = summary.rate !== null && summary.baselineRate !== null
+            ? summary.rate - summary.baselineRate
+            : null;
+        const edgeClass = edge === null ? '' : edge > 5 ? 'up' : edge < -5 ? 'down' : 'flat';
+        return `<tr>
+            <th>${horizon.id}</th>
+            <td>${summary.n}</td>
+            <td>${percent(summary.rate)}${summary.n > 0 ? ` <span class="muted">(${summary.hits}/${summary.n})</span>` : ''}</td>
+            <td>${percent(summary.baselineRate)}${summary.baselineVerdict ? ` <span class="muted">(一直喊 ${summary.baselineVerdict})</span>` : ''}</td>
+            <td class="${edgeClass}">${edge === null ? '—' : `${edge >= 0 ? '+' : ''}${edge.toFixed(0)}pt`}</td>
+        </tr>`;
+    }).join('');
+
+    const main = summarize(ledger);
+    const recent = [...ledger.entries].sort((left, right) => right.askedAt - left.askedAt).slice(0, 12).map((entry) => {
+        const outcome = entry.outcomes[main.horizon.id];
+        const result = outcome
+            ? `<span class="${outcome.hit ? 'up' : 'down'}">${outcome.hit ? '命中' : '未中'}</span> <span class="muted">${outcome.changePercent >= 0 ? '+' : ''}${outcome.changePercent.toFixed(1)}%</span>`
+            : '<span class="muted">未到期</span>';
+        return `<tr>
+            <th>${new Date(entry.askedAt).toLocaleString()}</th>
+            <td>${escapeHtml(entry.verdict)}</td>
+            <td>${entry.confidence}</td>
+            <td>${formatNumber(entry.price, 0)}</td>
+            <td>${result}</td>
+            <td class="muted">${entry.catalyst ? escapeHtml(entry.catalyst) : ''}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+        <p class="muted">判定标准：${main.horizon.id} 后涨跌超过 ${ledger.thresholdPercent}% 才算方向成立，买入要涨到、卖出要跌到、观望要求确实没走出这个区间。
+        统计每 6 小时最多取一条，免得忙碌的一天盖过安静的一周。“一直喊同一句”是同一批样本下最好的固定答案能拿到的成绩 —— 跑不赢它就等于没信息。</p>
+        <table>
+            <tr><th>周期</th><th>样本</th><th>命中率</th><th>一直喊同一句</th><th>差值</th></tr>
+            ${rows}
+        </table>
+        <h2 style="margin-top:20px">最近的判断（按 ${main.horizon.id} 结算）</h2>
+        <table>
+            <tr><th>时间</th><th>判断</th><th>信心</th><th>当时价格</th><th>结果</th><th>当时的催化剂</th></tr>
+            ${recent}
+        </table>`;
+}
+
+function renderPage(symbol: string, market: BtcMarketData | null, advice: BtcAdvice | null, intervalMinutes: number, autoRefresh: boolean, ledger: Ledger): string {
     const bars = market ? (market.hourlyBars.length > 0 ? market.hourlyBars : market.dailyBars) : [];
     const dailyBars = market?.dailyBars ?? [];
 
@@ -230,6 +289,7 @@ svg line.up, svg rect.up { stroke: var(--up); fill: var(--up); }
 svg line.down, svg rect.down { stroke: var(--down); fill: var(--down); }
 svg line.grid { stroke: currentColor; opacity: .12; }
 svg text.axis { fill: var(--muted); font-size: 10px; }
+.up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--flat); }
 button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
 button[disabled] { opacity: .5; cursor: progress; }
 .row { display: flex; gap: 12px; align-items: center; }
@@ -255,6 +315,9 @@ footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
 </div>
 <div id="chart-1h">${candlestickSvg(bars)}</div>
 <div id="chart-1d" hidden>${candlestickSvg(dailyBars)}</div>
+
+<h2>预测准确率</h2>
+<div id="accuracy">${renderAccuracySection(ledger)}</div>
 
 <h2>行情快照</h2>
 <div id="market">${renderMarketSection(market)}</div>
@@ -348,9 +411,13 @@ export function runBtcReportServer(): void {
 
         if (url.pathname === '/') {
             const options = readAdviceOptions(symbol);
+            const ledger = readLedger(symbol);
+            if (hasDueScoring(ledger)) {
+                scheduleScoring(symbol);
+            }
             void fetchBtcMarket(symbol).then((fetched) => {
                 const market = fetched ?? readCachedBtcMarket(symbol);
-                const page = renderPage(symbol, market, readCachedBtcAdvice(symbol), options.intervalMinutes, url.searchParams.get('refresh') === '1');
+                const page = renderPage(symbol, market, readCachedBtcAdvice(symbol), options.intervalMinutes, url.searchParams.get('refresh') === '1', ledger);
                 response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 response.end(page);
             });

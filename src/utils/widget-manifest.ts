@@ -86,6 +86,7 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'btc-price', create: () => new widgets.BtcPriceWidget() },
     { type: 'btc-trend', create: () => new widgets.BtcTrendWidget() },
     { type: 'btc-advice', create: () => new widgets.BtcAdviceWidget() },
+    { type: 'btc-accuracy', create: () => new widgets.BtcAccuracyWidget() },
     { type: 'session-usage', create: () => new widgets.SessionUsageWidget() },
     { type: 'weekly-usage', create: () => new widgets.WeeklyUsageWidget() },
     { type: 'extra-usage-utilization', create: () => new widgets.ExtraUsageUtilizationWidget() },

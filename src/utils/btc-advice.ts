@@ -25,6 +25,7 @@ import {
     fetchBtcMarket,
     getWidgetSymbol
 } from './btc';
+import { appendPrediction } from './btc-ledger';
 
 // "Should I buy?", asked of Claude Code itself on a slow timer.
 //
@@ -511,13 +512,18 @@ export async function refreshBtcAdviceFromCli(
         }
 
         const answer = parseAdviceResponse(askClaude(market, model, language, useNews));
-        writeCachedBtcAdvice({
-            symbol,
-            askedAt: Date.now(),
-            model,
+        const askedAt = Date.now();
+        writeCachedBtcAdvice({ symbol, askedAt, model, price: market.price, newsUsed: useNews, ...answer });
+
+        // Every answer goes on the record, so the hit rate is not self-selected
+        appendPrediction(symbol, {
+            askedAt,
+            verdict: answer.verdict,
+            confidence: answer.confidence,
             price: market.price,
+            model,
             newsUsed: useNews,
-            ...answer
+            ...(answer.catalyst ? { catalyst: answer.catalyst } : {})
         });
     } catch (error) {
         // Cache the failure too: without it every render would retry the ask.
@@ -530,6 +536,29 @@ export async function refreshBtcAdviceFromCli(
     } finally {
         releaseRefreshLock(lockPath);
     }
+}
+
+/**
+ * Put the answer currently on screen into the ledger, for the one case where
+ * the ledger is younger than the advice: the first run after this feature
+ * landed. Only a real, cached verdict is recorded - nothing is invented.
+ */
+export function seedLedgerFromCache(symbol: string): boolean {
+    const advice = readCachedBtcAdvice(symbol);
+    if (!advice?.verdict || advice.price === undefined) {
+        return false;
+    }
+
+    appendPrediction(symbol, {
+        askedAt: advice.askedAt,
+        verdict: advice.verdict,
+        confidence: advice.confidence ?? 50,
+        price: advice.price,
+        model: advice.model,
+        ...(advice.newsUsed === undefined ? {} : { newsUsed: advice.newsUsed }),
+        ...(advice.catalyst ? { catalyst: advice.catalyst } : {})
+    });
+    return true;
 }
 
 /** `ccstatusline --btc-advice [SYMBOL]`: the whole answer, which never fits on

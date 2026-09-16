@@ -13,8 +13,15 @@ import {
     forceRefreshBtcAdvice,
     formatAdviceForCli,
     readAdviceOptions,
-    refreshBtcAdviceFromCli
+    refreshBtcAdviceFromCli,
+    seedLedgerFromCache
 } from './utils/btc-advice';
+import {
+    BTC_SCORE_FLAG,
+    formatScoreForCli,
+    releaseScoreLock,
+    scoreLedger
+} from './utils/btc-ledger';
 import {
     BTC_SERVER_FLAG,
     runBtcReportServer
@@ -330,6 +337,40 @@ async function handleBtcAdviceRefresh(): Promise<boolean> {
     return true;
 }
 
+/** Detached scorer: settles the calls whose horizon has passed. Emits nothing. */
+async function handleBtcScore(): Promise<boolean> {
+    const flagIndex = process.argv.indexOf(BTC_SCORE_FLAG);
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const symbol = process.argv[flagIndex + 1];
+    const lockPath = process.argv[flagIndex + 2];
+    if (!symbol || !lockPath) {
+        return true;
+    }
+
+    try {
+        seedLedgerFromCache(symbol);
+        await scoreLedger(symbol);
+    } finally {
+        releaseScoreLock(lockPath);
+    }
+    return true;
+}
+
+/** `--btc-score [SYMBOL]`: print the prediction record. */
+function handleBtcScorePrint(): boolean {
+    const flagIndex = process.argv.indexOf('--btc-score');
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const argument = process.argv[flagIndex + 1];
+    console.log(formatScoreForCli((argument && !argument.startsWith('-') ? argument : 'BTCUSDT').toUpperCase()));
+    return true;
+}
+
 /** Detached report server behind the status line's clickable verdict. */
 function handleBtcServer(): boolean {
     if (!process.argv.includes(BTC_SERVER_FLAG)) {
@@ -371,6 +412,10 @@ function handleBtcAdvicePrint(): boolean {
 }
 
 async function main() {
+    // Parsed first so every mode - including the detached children, which write
+    // the prediction ledger next to it - agrees on the config directory.
+    initConfigPath(parseConfigArg());
+
     // Detached cache refreshes re-enter this executable without reading stdin
     // or loading user settings. This mode intentionally emits no output.
     if (handleGitReviewRefresh()) {
@@ -389,6 +434,14 @@ async function main() {
         return;
     }
 
+    if (await handleBtcScore()) {
+        return;
+    }
+
+    if (handleBtcScorePrint()) {
+        return;
+    }
+
     if (handleBtcServer()) {
         return;   // never returns: the server owns the process from here
     }
@@ -398,9 +451,6 @@ async function main() {
         console.log(getPackageVersion());
         process.exit(0);
     }
-
-    // Parse --config before anything else
-    initConfigPath(parseConfigArg());
 
     // Handle --hook mode (cross-platform hook handler for widgets)
     if (process.argv.includes('--hook')) {

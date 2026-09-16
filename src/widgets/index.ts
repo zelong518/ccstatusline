@@ -76,6 +76,7 @@ export { ContextBarWidget } from './ContextBar';
 export { BtcPriceWidget } from './BtcPrice';
 export { BtcTrendWidget } from './BtcTrend';
 export { BtcAdviceWidget } from './BtcAdvice';
+export { BtcAccuracyWidget } from './BtcAccuracy';
 export { LinkWidget } from './Link';
 export { SkillsWidget } from './Skills';
 export { ThinkingEffortWidget } from './ThinkingEffort';
