@@ -35,6 +35,7 @@ import type { TrendColorKey } from './shared/crypto-display';
 import {
     colorizeTrend,
     formatAge,
+    formatClock,
     isTrendColorsEnabled,
     toggleTrendColors
 } from './shared/crypto-display';
@@ -50,8 +51,10 @@ const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'until th
 const INTERVAL_CHOICES = [15, 30, 60, 120, 360];
 const REFRESH_GLYPH = '⟳';
 const DETAIL_CHOICES = ['none', 'catalyst', 'reason'] as const;
+const TIME_CHOICES = ['none', 'clock', 'age', 'both'] as const;
 
 type DetailMode = typeof DETAIL_CHOICES[number];
+type TimeMode = typeof TIME_CHOICES[number];
 
 const VERDICT_COLOR_KEYS: Record<BtcVerdict, TrendColorKey> = {
     BUY: 'up',
@@ -63,8 +66,24 @@ function isConfidenceShown(item: WidgetItem): boolean {
     return item.metadata?.confidence !== 'false';
 }
 
-function isAgeShown(item: WidgetItem): boolean {
-    return item.metadata?.age === 'true';
+/** When the verdict was given: wall clock, age, both, or neither.
+ *  Falls back to the older boolean `age` flag when `time` is unset. */
+function getTimeMode(item: WidgetItem): TimeMode {
+    const mode = TIME_CHOICES.find(choice => choice === item.metadata?.time);
+    return mode ?? (item.metadata?.age === 'true' ? 'age' : 'none');
+}
+
+function formatWhen(askedAt: number, mode: TimeMode): string | null {
+    switch (mode) {
+        case 'clock':
+            return formatClock(askedAt);
+        case 'age':
+            return formatAge(Date.now() - askedAt);
+        case 'both':
+            return `${formatClock(askedAt)} · ${formatAge(Date.now() - askedAt)}`;
+        case 'none':
+            return null;
+    }
 }
 
 /** The verdict links to the local report; the glyph next to it re-asks now. */
@@ -112,6 +131,9 @@ export class BtcAdviceWidget implements Widget {
         if (detail !== 'none') {
             modifiers.push(detail);
         }
+        if (getTimeMode(item) !== 'none') {
+            modifiers.push(getTimeMode(item));
+        }
         if (!areLinksEnabled(item)) {
             modifiers.push('no report link');
         }
@@ -128,8 +150,8 @@ export class BtcAdviceWidget implements Widget {
                 return withMetadata(item, 'intervalMinutes', String(cycleFrom(INTERVAL_CHOICES, getAdviceIntervalMinutes(item), 30)));
             case 'toggle-confidence':
                 return withMetadata(item, 'confidence', isConfidenceShown(item) ? 'false' : 'true');
-            case 'toggle-age':
-                return withMetadata(item, 'age', isAgeShown(item) ? 'false' : 'true');
+            case 'cycle-time':
+                return withMetadata(item, 'time', cycleFrom(TIME_CHOICES, getTimeMode(item), 'none'));
             case 'cycle-detail':
                 return withMetadata(item, 'detail', cycleFrom(DETAIL_CHOICES, getDetailMode(item), 'none'));
             case 'toggle-language':
@@ -157,8 +179,9 @@ export class BtcAdviceWidget implements Widget {
             if (isConfidenceShown(item)) {
                 parts.push('65');
             }
-            if (isAgeShown(item)) {
-                parts.push('· 12m');
+            const previewWhen = formatWhen(Date.now() - 12 * 60_000, getTimeMode(item));
+            if (previewWhen) {
+                parts.push(`· ${previewWhen}`);
             }
             if (getDetailMode(item) !== 'none') {
                 parts.push(language === 'zh' ? '· 等 CPI 数据' : '· waiting on CPI');
@@ -196,10 +219,13 @@ export class BtcAdviceWidget implements Widget {
             parts.push(String(advice.confidence));
         }
         if (asking) {
-            // An ask is running right now; its age matters more than the old one's
+            // An ask is running right now; when the old one was given matters less
             parts.push(language === 'zh' ? '· 询问中…' : '· asking…');
-        } else if (isAgeShown(item)) {
-            parts.push(`· ${formatAge(Date.now() - advice.askedAt)}`);
+        } else {
+            const when = formatWhen(advice.askedAt, getTimeMode(item));
+            if (when) {
+                parts.push(`· ${when}`);
+            }
         }
         const detail = getDetailText(advice, getDetailMode(item));
         if (detail) {
@@ -214,7 +240,7 @@ export class BtcAdviceWidget implements Widget {
             SYMBOL_KEYBIND,
             { key: 'n', label: 'i(n)terval cycle', action: 'cycle-interval' },
             { key: 'f', label: 'con(f)idence toggle', action: 'toggle-confidence' },
-            { key: 'g', label: 'a(g)e toggle', action: 'toggle-age' },
+            { key: 'g', label: 'time: clock/a(g)e/both', action: 'cycle-time' },
             { key: 'w', label: '(w)hy: reason/catalyst', action: 'cycle-detail' },
             { key: 'l', label: '(l)anguage toggle', action: 'toggle-language' },
             { key: 's', label: 'news (s)earch toggle', action: 'toggle-news' },

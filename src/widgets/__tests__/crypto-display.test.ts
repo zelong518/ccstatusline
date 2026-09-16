@@ -10,6 +10,7 @@ import {
     brailleline,
     candleline,
     formatAge,
+    formatClock,
     formatPrice,
     formatSignedPercent,
     sparkline,
@@ -65,6 +66,14 @@ describe('sparkline', () => {
 
     it('is empty for an empty series', () => {
         expect(sparkline([], 12)).toBe('');
+    });
+});
+
+describe('formatClock', () => {
+    it('pads to a 24-hour wall clock in local time', () => {
+        // Built and read in local time, so the assertion holds in any timezone
+        expect(formatClock(new Date(2026, 8, 16, 18, 37).getTime())).toBe('18:37');
+        expect(formatClock(new Date(2026, 8, 16, 9, 5).getTime())).toBe('09:05');
     });
 });
 

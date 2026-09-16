@@ -305,7 +305,7 @@ This fork adds a `Crypto` widget category: a live spot price, an hourly sparklin
 | --- | --- | --- |
 | Crypto Price | `btc-price` | `BTC $75,703 ▼1.66%` - spot price and 24h change |
 | Crypto Chart | `btc-trend` | `⠒⠒⠚⠉⠉⠙⠒⠒⠲⠤⢤⣤⣀⣀` - a braille line at 2x4 dots per cell, or candles (`▄▅▄▃▃▄▆`), or a plain sparkline |
-| Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 12m ⟳` - clickable: opens the full report, `⟳` re-asks now |
+| Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 18:37 · 12m ⟳` - clickable: opens the full report, `⟳` re-asks now |
 
 Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds under `~/.cache/ccstatusline/`. A venue that stops answering gets a 30-second backoff instead of a network round trip per render, and the last good quote keeps being drawn.
 
@@ -373,7 +373,7 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |
 | `w` | `detail` | advice | `none` - or `catalyst` / `reason` inline |
 | `f` | `confidence` | advice | on |
-| `g` | `age` | advice | off - how long ago the ask ran |
+| `g` | `time` | advice | `none` - or `clock` (18:37), `age` (12m), `both` |
 | `l` | `lang` | advice | `zh` - or `en` |
 | - | `model` | advice | `claude-haiku-4-5-20251001` |
 

@@ -184,6 +184,12 @@ export function candleline(bars: readonly Bar[], points: number, settings: Setti
         .join('');
 }
 
+/** Local wall clock, `18:37` - when the thing happened, not how long ago. */
+export function formatClock(timestamp: number): string {
+    const when = new Date(timestamp);
+    return `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+}
+
 /** Compact age, e.g. `40s`, `12m`, `2h`, `3d`. */
 export function formatAge(ageMs: number): string {
     const seconds = Math.max(0, Math.floor(ageMs / 1000));
