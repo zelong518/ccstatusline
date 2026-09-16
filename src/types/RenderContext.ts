@@ -2,6 +2,7 @@ import type {
     BlockMetrics,
     SkillsMetrics
 } from '../types';
+import type { BtcMarketMap } from '../utils/btc';
 
 import type { SpeedMetrics } from './SpeedMetrics';
 import type { StatusJSON } from './StatusJSON';
@@ -49,6 +50,7 @@ export interface RenderContext {
     windowedSpeedMetrics?: Record<string, SpeedMetrics> | null;
     usageData?: RenderUsageData | null;
     claudeStatusData?: ClaudeStatusRenderData | null;
+    btcData?: BtcMarketMap | null;   // keyed by trading pair, e.g. BTCUSDT
     sessionDuration?: string | null;
     transcriptSessionName?: string | null;
     transcriptThinkingEffort?: { value: string; known: boolean } | null;

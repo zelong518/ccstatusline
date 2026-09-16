@@ -34,6 +34,7 @@
 
 - [Recent Updates](#-recent-updates)
 - [Features](#-features)
+- [Crypto Widgets](#-crypto-widgets)
 - [Localizations](#-localizations)
 - [Quick Start](#-quick-start)
 - [Windows Support](docs/WINDOWS.md)
@@ -293,6 +294,65 @@
 - **🔧 Flexible Configuration** - Supports custom Claude Code config directory via `CLAUDE_CONFIG_DIR` environment variable
 - **📏 Smart Width Detection** - Automatically adapts to terminal width with flex separators
 - **⚡ Zero Config** - Sensible defaults that work out of the box
+
+<br />
+
+## 📈 Crypto Widgets
+
+This fork adds a `Crypto` widget category: a live spot price, an hourly sparkline, and a buy/hold/sell call that Claude Code itself makes on a timer.
+
+| Widget | Type | Shows |
+| --- | --- | --- |
+| Crypto Price | `btc-price` | `BTC $75,703 ▼1.66%` - spot price and 24h change |
+| Crypto Trend | `btc-trend` | `▃▃▅▁▆▅▆▇█▅▄▅` - sparkline of the last N hourly closes |
+| Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 12m · Fed decision, CLARITY Act vote` |
+
+Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds under `~/.cache/ccstatusline/`. A venue that stops answering gets a 30-second backoff instead of a network round trip per render, and the last good quote keeps being drawn.
+
+### How the advice works
+
+A crash usually has a story behind it - a CPI print, an FOMC decision, an ETF flow, a post from someone the market listens to - so the ask does not look at the chart alone. Every `intervalMinutes` (default 30) the widget spawns a **detached** `claude -p`, which:
+
+1. searches the news of the last 24-48 hours for what is moving the asset (`WebSearch` and `WebFetch` are allowlisted; `--restricted` keeps Bash, Edit and the other execution tools out of it),
+2. names the dominant driver, with up to three source domains,
+3. reads the price snapshot in the light of that news, and
+4. answers one line of JSON: verdict, confidence, reason, catalyst, sources.
+
+The ask takes ~30s and never runs on the render path: the status line reads the cached answer and draws the previous verdict until the child lands a new one. A failed ask is cached too, so a broken setup cannot retry on every keystroke.
+
+```bash
+# the full answer, which is longer than a status line
+ccstatusline --btc-advice BTCUSDT
+
+BTCUSDT  HOLD  confidence 55
+  asked:    9/16/2026, 5:17:25 PM (with news search)
+  reason:   利空已出，Fed 决议影响不确定，75k 支撑关键
+  catalyst: Fed 加息预期 86-90% 与 CLARITY 法案否决
+  sources:  bitcoin.com, cryptonews.net, coindesk.com
+  Not investment advice.
+```
+
+### Options
+
+Press the listed key on the widget in the TUI, or set `metadata` directly in `settings.json`:
+
+| Key | `metadata` | Applies to | Default |
+| --- | --- | --- | --- |
+| `y` | `symbol` | all three | `BTCUSDT` |
+| `t` | `colors` | all three | off - direction colors (green up / red down / yellow flat) instead of the theme color |
+| `g` | `change` | price | on - show the 24h change |
+| `p` | `points` | trend | `12` hourly closes |
+| `n` | `intervalMinutes` | advice | `30` |
+| `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |
+| `w` | `detail` | advice | `none` - or `catalyst` / `reason` inline |
+| `f` | `confidence` | advice | on |
+| `g` | `age` | advice | off - how long ago the ask ran |
+| `l` | `lang` | advice | `zh` - or `en` |
+| - | `model` | advice | `claude-haiku-4-5-20251001` |
+
+`CCSTATUSLINE_CLAUDE_BIN` overrides how the `claude` executable is found; `CCSTATUSLINE_BTC_DEBUG=1` writes the raw answer to `~/.cache/ccstatusline/btc-advice-raw.txt`.
+
+> The verdict is a language model reading a chart and a few news stories on a timer. It is not investment advice.
 
 <br />
 

@@ -7,6 +7,12 @@ import type { RenderContext } from './types/RenderContext';
 import type { StatusJSON } from './types/StatusJSON';
 import { StatusJSONSchema } from './types/StatusJSON';
 import { getVisibleText } from './utils/ansi';
+import { prefetchBtcMarketIfNeeded } from './utils/btc';
+import {
+    BTC_ADVICE_REFRESH_FLAG,
+    formatAdviceForCli,
+    refreshBtcAdviceFromCli
+} from './utils/btc-advice';
 import { prefetchClaudeStatusIfNeeded } from './utils/claude-service-status';
 import { updateColorMap } from './utils/colors';
 import { ZERO_COMPACTION_STATS } from './utils/compaction';
@@ -132,10 +138,11 @@ async function renderMultipleLines(data: StatusJSON) {
             includeSessionName: hasSessionNameWidget
         })
         : Promise.resolve(null);
-    const [transcriptAnalysis, usageData, claudeStatusData] = await Promise.all([
+    const [transcriptAnalysis, usageData, claudeStatusData, btcData] = await Promise.all([
         transcriptAnalysisPromise,
         prefetchUsageDataIfNeeded(lines, data),
-        prefetchClaudeStatusIfNeeded(lines)
+        prefetchClaudeStatusIfNeeded(lines),
+        prefetchBtcMarketIfNeeded(lines)
     ]);
 
     const tokenMetrics = transcriptAnalysis?.tokenMetrics ?? null;
@@ -160,6 +167,7 @@ async function renderMultipleLines(data: StatusJSON) {
         windowedSpeedMetrics,
         usageData,
         claudeStatusData,
+        btcData,
         sessionDuration,
         transcriptSessionName: hasSessionNameWidget
             ? (transcriptAnalysis?.sessionName ?? null)
@@ -295,10 +303,52 @@ function handleGitReviewRefresh(): boolean {
     return true;
 }
 
+/** Detached child spawned by the Crypto Advice widget: does the ask, writes the
+ *  cache, releases the lock. Emits nothing. */
+async function handleBtcAdviceRefresh(): Promise<boolean> {
+    const flagIndex = process.argv.indexOf(BTC_ADVICE_REFRESH_FLAG);
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const symbol = process.argv[flagIndex + 1];
+    const lockPath = process.argv[flagIndex + 2];
+    const model = process.argv[flagIndex + 3];
+    const language = process.argv[flagIndex + 4] === 'en' ? 'en' : 'zh';
+    const useNews = process.argv[flagIndex + 5] !== 'chart-only';
+    if (!symbol || !lockPath || !model) {
+        return true;
+    }
+
+    await refreshBtcAdviceFromCli(symbol, lockPath, model, language, useNews);
+    return true;
+}
+
+/** `--btc-advice [SYMBOL]`: print the full cached answer, which is longer than
+ *  the status line can show. */
+function handleBtcAdvicePrint(): boolean {
+    const flagIndex = process.argv.indexOf('--btc-advice');
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const symbol = process.argv[flagIndex + 1];
+    console.log(formatAdviceForCli((symbol && !symbol.startsWith('-') ? symbol : 'BTCUSDT').toUpperCase()));
+    return true;
+}
+
 async function main() {
     // Detached cache refreshes re-enter this executable without reading stdin
     // or loading user settings. This mode intentionally emits no output.
     if (handleGitReviewRefresh()) {
+        return;
+    }
+
+    if (await handleBtcAdviceRefresh()) {
+        return;
+    }
+
+    if (handleBtcAdvicePrint()) {
         return;
     }
 
