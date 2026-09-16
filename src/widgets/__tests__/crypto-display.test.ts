@@ -4,7 +4,10 @@ import {
     it
 } from 'vitest';
 
+import type { Settings } from '../../types/Settings';
+import type { Bar } from '../../utils/btc';
 import {
+    candleline,
     formatAge,
     formatPrice,
     formatSignedPercent,
@@ -70,5 +73,23 @@ describe('formatAge', () => {
         expect(formatAge(12 * 60_000)).toBe('12m');
         expect(formatAge(3 * 3_600_000)).toBe('3h');
         expect(formatAge(2 * 86_400_000)).toBe('2d');
+    });
+});
+
+describe('candleline', () => {
+    // colorLevel 0 means colors are off, so the glyphs come back bare
+    const plain = { colorLevel: 0 } as unknown as Settings;
+    const bar = (o: number, h: number, l: number, c: number): Bar => ({ t: 0, o, h, l, c });
+
+    it('places each close inside the window high-low range', () => {
+        expect(candleline([bar(1, 1, 1, 1), bar(1, 2, 1, 2), bar(2, 3, 2, 3)], 3, plain, 'ansi16')).toBe('▁▅█');
+    });
+
+    it('keeps only the last `points` candles', () => {
+        expect(candleline([bar(1, 1, 1, 1), bar(1, 2, 1, 2), bar(2, 3, 2, 3)], 2, plain, 'ansi16')).toHaveLength(2);
+    });
+
+    it('is empty for an empty series', () => {
+        expect(candleline([], 12, plain, 'ansi16')).toBe('');
     });
 });

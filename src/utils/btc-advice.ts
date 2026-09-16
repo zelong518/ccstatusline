@@ -21,6 +21,7 @@ import type { WidgetItem } from '../types/Widget';
 import type { BtcMarketData } from './btc';
 import {
     BTC_ADVICE_WIDGET_TYPE,
+    barCloses,
     fetchBtcMarket,
     getWidgetSymbol
 } from './btc';
@@ -167,14 +168,10 @@ function releaseRefreshLock(lockPath: string): void {
     }
 }
 
-function scheduleRefresh(symbol: string, model: string, language: AdviceLanguage, useNews: boolean): void {
+function spawnRefreshChild(symbol: string, lockPath: string, model: string, language: AdviceLanguage, useNews: boolean): void {
     const scriptPath = process.argv[1];
     if (!scriptPath) {
-        return;
-    }
-
-    const lockPath = createRefreshLock(symbol);
-    if (!lockPath) {
+        releaseRefreshLock(lockPath);
         return;
     }
 
@@ -187,6 +184,73 @@ function scheduleRefresh(symbol: string, model: string, language: AdviceLanguage
         child.unref();
     } catch {
         releaseRefreshLock(lockPath);
+    }
+}
+
+function scheduleRefresh(symbol: string, model: string, language: AdviceLanguage, useNews: boolean): void {
+    const lockPath = createRefreshLock(symbol);
+    if (lockPath) {
+        spawnRefreshChild(symbol, lockPath, model, language, useNews);
+    }
+}
+
+/**
+ * Ask again right now, ignoring the interval - what the report page's Refresh
+ * button calls. False when an ask is already in flight; that one will land.
+ */
+export function forceRefreshBtcAdvice(symbol: string, model: string, language: AdviceLanguage, useNews: boolean): boolean {
+    const lockPath = createRefreshLock(symbol);
+    if (!lockPath) {
+        return false;
+    }
+    spawnRefreshChild(symbol, lockPath, model, language, useNews);
+    return true;
+}
+
+// The widget knows the model, language and interval to use; the report server
+// and the CLI do not, so the render path leaves them on disk next to the cache.
+const AdviceOptionsSchema = z.object({
+    model: z.string(),
+    language: z.enum(['zh', 'en']),
+    news: z.boolean(),
+    intervalMinutes: z.number()
+});
+
+export type AdviceOptions = z.infer<typeof AdviceOptionsSchema>;
+
+const DEFAULT_ADVICE_OPTIONS: AdviceOptions = {
+    model: DEFAULT_ADVICE_MODEL,
+    language: 'zh',
+    news: true,
+    intervalMinutes: DEFAULT_INTERVAL_MINUTES
+};
+
+function getOptionsFile(symbol: string): string {
+    return path.join(CACHE_DIR, `btc-options-${symbol}.json`);
+}
+
+export function readAdviceOptions(symbol: string): AdviceOptions {
+    try {
+        const parsed = AdviceOptionsSchema.safeParse(JSON.parse(readFileSync(getOptionsFile(symbol), 'utf8')));
+        return parsed.success ? parsed.data : DEFAULT_ADVICE_OPTIONS;
+    } catch {
+        return DEFAULT_ADVICE_OPTIONS;
+    }
+}
+
+/** Written only when it would change, so a render is a read and nothing more. */
+function persistAdviceOptions(symbol: string, options: AdviceOptions): void {
+    const current = readAdviceOptions(symbol);
+    if (current.model === options.model && current.language === options.language
+        && current.news === options.news && current.intervalMinutes === options.intervalMinutes) {
+        return;
+    }
+
+    try {
+        ensureCacheDirExists();
+        writeFileSync(getOptionsFile(symbol), JSON.stringify(options));
+    } catch {
+        // Best-effort: the server falls back to defaults
     }
 }
 
@@ -203,9 +267,15 @@ export function isNewsEnabled(item: WidgetItem): boolean {
 export function getBtcAdvice(item: WidgetItem, marketAvailable: boolean): BtcAdvice | null {
     const symbol = getWidgetSymbol(item);
     const cached = readCachedBtcAdvice(symbol);
+    const intervalMinutes = getAdviceIntervalMinutes(item);
+    const model = getAdviceModel(item);
+    const language = getAdviceLanguage(item);
+    const news = isNewsEnabled(item);
 
-    if (marketAvailable && isAdviceStale(cached, getAdviceIntervalMinutes(item))) {
-        scheduleRefresh(symbol, getAdviceModel(item), getAdviceLanguage(item), isNewsEnabled(item));
+    persistAdviceOptions(symbol, { model, language, news, intervalMinutes });
+
+    if (marketAvailable && isAdviceStale(cached, intervalMinutes)) {
+        scheduleRefresh(symbol, model, language, news);
     }
 
     return cached;
@@ -279,7 +349,7 @@ function buildUserPrompt(market: BtcMarketData, useNews: boolean): string {
         rsi14_daily: market.rsi14,
         rangePosition60d: market.rangePosition60d,
         fearGreed: market.fearGreed,
-        dailyCloses: market.dailyCloses.map(close => Math.round(close * 100) / 100)
+        dailyCloses: barCloses(market.dailyBars).map(close => Math.round(close * 100) / 100)
     };
 
     return [

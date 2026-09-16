@@ -32,6 +32,19 @@ export interface FearGreedIndex {
     label: string;
 }
 
+/** One candle, oldest-first in the arrays below. `t` is the open time in ms. */
+export interface Bar {
+    t: number;
+    o: number;
+    h: number;
+    l: number;
+    c: number;
+}
+
+export function barCloses(bars: readonly Bar[]): number[] {
+    return bars.map(bar => bar.c);
+}
+
 export interface BtcMarketData {
     symbol: string;
     source: 'binance' | 'okx';
@@ -47,14 +60,22 @@ export interface BtcMarketData {
     ma30?: number;
     rsi14?: number;              // Wilder RSI on daily closes
     rangePosition60d?: number;   // 0 = 60d low, 100 = 60d high
-    hourlyCloses: number[];      // oldest first, up to 48
-    dailyCloses: number[];       // oldest first, up to 30
+    hourlyBars: Bar[];           // oldest first, up to 48
+    dailyBars: Bar[];            // oldest first, up to 30
     fearGreed?: FearGreedIndex;
 }
 
 export type BtcMarketMap = Record<string, BtcMarketData>;
 
 const FearGreedSchema = z.object({ value: z.number(), label: z.string() });
+
+const BarSchema = z.object({
+    t: z.number(),
+    o: z.number(),
+    h: z.number(),
+    l: z.number(),
+    c: z.number()
+});
 
 const BtcMarketDataSchema = z.object({
     symbol: z.string(),
@@ -71,8 +92,8 @@ const BtcMarketDataSchema = z.object({
     ma30: z.number().optional(),
     rsi14: z.number().optional(),
     rangePosition60d: z.number().optional(),
-    hourlyCloses: z.array(z.number()),
-    dailyCloses: z.array(z.number()),
+    hourlyBars: z.array(BarSchema),
+    dailyBars: z.array(BarSchema),
     fearGreed: FearGreedSchema.optional()
 });
 
@@ -271,23 +292,25 @@ function closeAt(closes: number[], barsBack: number): number | undefined {
     return closes[closes.length - 1 - barsBack];
 }
 
-function parseKlineCloses(payload: unknown, closeIndex: number, newestFirst: boolean): number[] | null {
+/** Both venues lay a candle out as [openTime, open, high, low, close, ...];
+ *  OKX just hands them back newest first. */
+function parseKlineBars(payload: unknown, newestFirst: boolean): Bar[] | null {
     if (!Array.isArray(payload)) {
         return null;
     }
 
-    const closes: number[] = [];
+    const bars: Bar[] = [];
     for (const row of payload) {
         if (!Array.isArray(row)) {
             return null;
         }
-        const close = toFinite(row[closeIndex]);
-        if (close === null) {
+        const [t, o, h, l, c] = [toFinite(row[0]), toFinite(row[1]), toFinite(row[2]), toFinite(row[3]), toFinite(row[4])];
+        if (t === null || o === null || h === null || l === null || c === null) {
             return null;
         }
-        closes.push(close);
+        bars.push({ t, o, h, l, c });
     }
-    return newestFirst ? closes.reverse() : closes;
+    return newestFirst ? bars.reverse() : bars;
 }
 
 interface RawQuote {
@@ -296,8 +319,8 @@ interface RawQuote {
     change24h: number;
     high24h: number;
     low24h: number;
-    hourlyCloses: number[];
-    dailyCloses: number[];
+    hourlyBars: Bar[];
+    dailyBars: Bar[];
 }
 
 async function fetchFromBinance(symbol: string): Promise<RawQuote | null> {
@@ -316,15 +339,15 @@ async function fetchFromBinance(symbol: string): Promise<RawQuote | null> {
     const change24h = toFinite(record.priceChangePercent);
     const high24h = toFinite(record.highPrice);
     const low24h = toFinite(record.lowPrice);
-    const hourlyCloses = parseKlineCloses(hourly, 4, false);
-    const dailyCloses = parseKlineCloses(daily, 4, false);
+    const hourlyBars = parseKlineBars(hourly, false);
+    const dailyBars = parseKlineBars(daily, false);
 
     if (price === null || change24h === null || high24h === null || low24h === null
-        || hourlyCloses === null || dailyCloses === null) {
+        || hourlyBars === null || dailyBars === null) {
         return null;
     }
 
-    return { source: 'binance', price, change24h, high24h, low24h, hourlyCloses, dailyCloses };
+    return { source: 'binance', price, change24h, high24h, low24h, hourlyBars, dailyBars };
 }
 
 async function fetchFromOkx(symbol: string): Promise<RawQuote | null> {
@@ -346,11 +369,11 @@ async function fetchFromOkx(symbol: string): Promise<RawQuote | null> {
     const high24h = toFinite(first.high24h);
     const low24h = toFinite(first.low24h);
     // OKX returns candles newest first
-    const hourlyCloses = parseKlineCloses((hourly as { data?: unknown } | null)?.data, 4, true);
-    const dailyCloses = parseKlineCloses((daily as { data?: unknown } | null)?.data, 4, true);
+    const hourlyBars = parseKlineBars((hourly as { data?: unknown } | null)?.data, true);
+    const dailyBars = parseKlineBars((daily as { data?: unknown } | null)?.data, true);
 
     if (price === null || open24h === null || open24h === 0 || high24h === null || low24h === null
-        || hourlyCloses === null || dailyCloses === null) {
+        || hourlyBars === null || dailyBars === null) {
         return null;
     }
 
@@ -360,8 +383,8 @@ async function fetchFromOkx(symbol: string): Promise<RawQuote | null> {
         change24h: (price - open24h) / open24h * 100,
         high24h,
         low24h,
-        hourlyCloses,
-        dailyCloses
+        hourlyBars,
+        dailyBars
     };
 }
 
@@ -378,7 +401,10 @@ async function fetchFearGreed(): Promise<FearGreedIndex | undefined> {
 }
 
 function buildMarketData(symbol: string, quote: RawQuote, fearGreed: FearGreedIndex | undefined): BtcMarketData {
-    const { dailyCloses, hourlyCloses, price } = quote;
+    const { price } = quote;
+    // Indicators use the full series; only the stored tail is trimmed
+    const dailyCloses = barCloses(quote.dailyBars);
+    const hourlyCloses = barCloses(quote.hourlyBars);
     const high60d = dailyCloses.length > 0 ? Math.max(...dailyCloses) : undefined;
     const low60d = dailyCloses.length > 0 ? Math.min(...dailyCloses) : undefined;
     const rangeSpan = high60d !== undefined && low60d !== undefined ? high60d - low60d : 0;
@@ -398,8 +424,8 @@ function buildMarketData(symbol: string, quote: RawQuote, fearGreed: FearGreedIn
         ma30: sma(dailyCloses, 30),
         rsi14: rsi(dailyCloses, 14),
         rangePosition60d: rangeSpan > 0 && low60d !== undefined ? (price - low60d) / rangeSpan * 100 : undefined,
-        hourlyCloses: hourlyCloses.slice(-48),
-        dailyCloses: dailyCloses.slice(-30),
+        hourlyBars: quote.hourlyBars.slice(-48),
+        dailyBars: quote.dailyBars.slice(-30),
         ...(fearGreed ? { fearGreed } : {})
     };
 }

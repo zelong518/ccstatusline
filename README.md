@@ -304,8 +304,8 @@ This fork adds a `Crypto` widget category: a live spot price, an hourly sparklin
 | Widget | Type | Shows |
 | --- | --- | --- |
 | Crypto Price | `btc-price` | `BTC $75,703 ▼1.66%` - spot price and 24h change |
-| Crypto Trend | `btc-trend` | `▃▃▅▁▆▅▆▇█▅▄▅` - sparkline of the last N hourly closes |
-| Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 12m · Fed decision, CLARITY Act vote` |
+| Crypto Chart | `btc-trend` | `▄▅▄▃▃▃▄▃▄▄▄▄▄▃▃▄` - one cell per candle, height = close in the window's range, color = that bar's direction |
+| Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 12m ⟳` - clickable: opens the full report, `⟳` re-asks now |
 
 Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds under `~/.cache/ccstatusline/`. A venue that stops answering gets a 30-second backoff instead of a network round trip per render, and the last good quote keeps being drawn.
 
@@ -320,7 +320,21 @@ A crash usually has a story behind it - a CPI print, an FOMC decision, an ETF fl
 
 The ask takes ~30s and never runs on the render path: the status line reads the cached answer and draws the previous verdict until the child lands a new one. A failed ask is cached too, so a broken setup cannot retry on every keystroke.
 
+### The report page
+
+A status line has no room for the answer and a terminal has no buttons - a click can only open a URL. So the verdict is an OSC 8 hyperlink to a small local server (loopback, arbitrary port, started on demand by the widget, exits by itself after an hour idle). The page carries what the line cannot:
+
+- when the verdict was given, how old it is, and when the next ask is due
+- the reason, the news catalyst, and the sources as real links
+- a candlestick chart (hourly and daily), and the snapshot the ask was given
+- a **立即重新询问 / Ask again now** button, which triggers the ask and reloads when the answer lands
+
+The `⟳` next to the verdict opens that same page with the refresh already running, so re-asking is one click from the status line. From a shell:
+
 ```bash
+# ask again now, without waiting for the interval
+ccstatusline --btc-refresh BTCUSDT
+
 # the full answer, which is longer than a status line
 ccstatusline --btc-advice BTCUSDT
 
@@ -341,7 +355,10 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `y` | `symbol` | all three | `BTCUSDT` |
 | `t` | `colors` | all three | off - direction colors (green up / red down / yellow flat) instead of the theme color |
 | `g` | `change` | price | on - show the 24h change |
-| `p` | `points` | trend | `12` hourly closes |
+| `p` | `points` | chart | `12` candles |
+| `b` | `bar` | chart | `1h` - or `1d` |
+| `v` | `style` | chart | `candles` - or `line` for a plain sparkline |
+| `o` | `link` | advice | on - clickable report and `⟳` refresh |
 | `n` | `intervalMinutes` | advice | `30` |
 | `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |
 | `w` | `detail` | advice | `none` - or `catalyst` / `reason` inline |

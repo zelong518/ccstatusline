@@ -10,9 +10,15 @@ import { getVisibleText } from './utils/ansi';
 import { prefetchBtcMarketIfNeeded } from './utils/btc';
 import {
     BTC_ADVICE_REFRESH_FLAG,
+    forceRefreshBtcAdvice,
     formatAdviceForCli,
+    readAdviceOptions,
     refreshBtcAdviceFromCli
 } from './utils/btc-advice';
+import {
+    BTC_SERVER_FLAG,
+    runBtcReportServer
+} from './utils/btc-report';
 import { prefetchClaudeStatusIfNeeded } from './utils/claude-service-status';
 import { updateColorMap } from './utils/colors';
 import { ZERO_COMPACTION_STATS } from './utils/compaction';
@@ -324,6 +330,33 @@ async function handleBtcAdviceRefresh(): Promise<boolean> {
     return true;
 }
 
+/** Detached report server behind the status line's clickable verdict. */
+function handleBtcServer(): boolean {
+    if (!process.argv.includes(BTC_SERVER_FLAG)) {
+        return false;
+    }
+
+    runBtcReportServer();
+    return true;
+}
+
+/** `--btc-refresh [SYMBOL]`: ask again now, without waiting for the interval. */
+function handleBtcRefresh(): boolean {
+    const flagIndex = process.argv.indexOf('--btc-refresh');
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const argument = process.argv[flagIndex + 1];
+    const symbol = (argument && !argument.startsWith('-') ? argument : 'BTCUSDT').toUpperCase();
+    const options = readAdviceOptions(symbol);
+    const started = forceRefreshBtcAdvice(symbol, options.model, options.language, options.news);
+    console.log(started
+        ? `${symbol}: asking now (~30s). Read it with: ccstatusline --btc-advice ${symbol}`
+        : `${symbol}: an ask is already in flight; its answer will land shortly.`);
+    return true;
+}
+
 /** `--btc-advice [SYMBOL]`: print the full cached answer, which is longer than
  *  the status line can show. */
 function handleBtcAdvicePrint(): boolean {
@@ -350,6 +383,14 @@ async function main() {
 
     if (handleBtcAdvicePrint()) {
         return;
+    }
+
+    if (handleBtcRefresh()) {
+        return;
+    }
+
+    if (handleBtcServer()) {
+        return;   // never returns: the server owns the process from here
     }
 
     // Print version and exit (#461). Standard CLI behavior, runs before any other mode.

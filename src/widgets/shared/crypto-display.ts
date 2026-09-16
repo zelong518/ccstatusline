@@ -1,6 +1,7 @@
 import type { ColorLevelString } from '../../types/ColorLevel';
 import type { Settings } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
+import type { Bar } from '../../utils/btc';
 import { getColorAnsiCode } from '../../utils/colors';
 
 // Shared presentation for the crypto widgets: direction colors, price/percent
@@ -73,6 +74,32 @@ export function formatPrice(price: number): string {
 export function formatSignedPercent(change: number): string {
     const arrow = Math.abs(change) < 0.01 ? '' : change > 0 ? '▲' : '▼';
     return `${arrow}${Math.abs(change).toFixed(2)}%`;
+}
+
+/**
+ * A candle chart in one row of text. A cell cannot hold a body and both wicks,
+ * so each bar keeps the two things a glance is actually for: height places the
+ * close inside the window's full high-low range, and color gives the bar's own
+ * direction. The click-through report draws the real thing.
+ */
+export function candleline(bars: readonly Bar[], points: number, settings: Settings, colorLevel: ColorLevelString): string {
+    const window = bars.slice(-points);
+    if (window.length === 0) {
+        return '';
+    }
+
+    const high = Math.max(...window.map(bar => bar.h));
+    const low = Math.min(...window.map(bar => bar.l));
+    const span = high - low;
+    const midBlock = SPARKLINE_BLOCKS[Math.floor(SPARKLINE_BLOCKS.length / 2)] ?? '▄';
+
+    return window
+        .map((bar) => {
+            const index = span > 0 ? Math.round((bar.c - low) / span * (SPARKLINE_BLOCKS.length - 1)) : -1;
+            const glyph = (index >= 0 ? SPARKLINE_BLOCKS[index] : midBlock) ?? midBlock;
+            return colorizeTrend(glyph, bar.c >= bar.o ? 'up' : 'down', settings, colorLevel);
+        })
+        .join('');
 }
 
 /** Compact age, e.g. `40s`, `12m`, `2h`, `3d`. */
