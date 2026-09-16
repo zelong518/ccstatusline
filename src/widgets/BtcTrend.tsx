@@ -18,6 +18,7 @@ import {
 } from '../utils/btc';
 
 import {
+    aggregateBars,
     brailleline,
     candleline,
     colorizeTrend,
@@ -40,6 +41,8 @@ const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'when the
 const HOURLY_POINT_CHOICES = [12, 24, 48, 72];
 const DAILY_POINT_CHOICES = [7, 14, 30, 60];
 const DEFAULT_POINTS = 24;
+const WIDTH_CHOICES = [0, 8, 12, 16, 24];   // 0 = one cell per bar
+
 const INTERVALS = ['1h', '1d'] as const;
 const STYLES = ['braille', 'candles', 'line'] as const;
 
@@ -70,6 +73,12 @@ function getPoints(item: WidgetItem): number {
     // A span carried over from the other interval: clamp into this one's range
     const fallback = Number.isFinite(raw) ? raw : DEFAULT_POINTS;
     return Math.min(choices[choices.length - 1] ?? DEFAULT_POINTS, Math.max(choices[0] ?? DEFAULT_POINTS, Math.round(fallback)));
+}
+
+/** Cells to draw in. 0 means one per bar, i.e. no aggregation. */
+function getWidth(item: WidgetItem): number {
+    const raw = Number(item.metadata?.width);
+    return WIDTH_CHOICES.includes(raw) ? raw : 12;
 }
 
 /** e.g. `48h`, `30d` - the span the chart covers. */
@@ -109,7 +118,8 @@ export class BtcTrendWidget implements Widget {
     getCategory(): string { return 'Crypto'; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        const modifiers = [getWidgetSymbol(item), getSpanLabel(item), getStyle(item)];
+        const width = getWidth(item);
+        const modifiers = [getWidgetSymbol(item), getSpanLabel(item), getStyle(item), width === 0 ? 'per bar' : `${width} cells`];
         if (getStyle(item) === 'line' && isTrendColorsEnabled(item)) {
             modifiers.push('trend colors');
         }
@@ -126,6 +136,8 @@ export class BtcTrendWidget implements Widget {
                 return withMetadata(item, 'points', String(cycle(getPointChoices(item), getPoints(item), DEFAULT_POINTS)));
             case 'cycle-interval':
                 return withMetadata(item, 'bar', cycle(INTERVALS, getInterval(item), '1h'));
+            case 'cycle-width':
+                return withMetadata(item, 'width', String(cycle(WIDTH_CHOICES, getWidth(item), 12)));
             case 'cycle-style':
                 return withMetadata(item, 'style', cycle(STYLES, getStyle(item), 'braille'));
             case 'toggle-trend-colors':
@@ -140,23 +152,29 @@ export class BtcTrendWidget implements Widget {
         const points = getPoints(item);
         const style = getStyle(item);
 
-        const draw = (bars: Bar[]): string => {
+        const width = getWidth(item);
+        const draw = (allBars: Bar[]): string => {
+            const span = allBars.slice(-points);
+            // width 0 keeps one cell per bar; otherwise zoom out into `width`
+            // longer bars, whose shape carries the trend instead of the noise
+            const cells = width === 0 ? span.length : Math.min(width, span.length);
+            const bars = aggregateBars(span, cells);
             const closes = barCloses(bars);
+
             if (style === 'braille') {
-                // two bars per cell, so the span drawn matches the other styles
-                return brailleline(closes.slice(-points), Math.ceil(points / 2), settings, colorLevel);
+                return brailleline(barCloses(aggregateBars(span, cells * 2)), cells, settings, colorLevel);
             }
             if (style === 'candles') {
-                return candleline(bars, points, settings, colorLevel);
+                return candleline(bars, cells, settings, colorLevel);
             }
 
-            const line = sparkline(closes, points);
+            const line = sparkline(closes, cells);
             if (!isTrendColorsEnabled(item)) {
                 return line;
             }
 
             // Color the line by the move it actually covers, not the 24h ticker
-            const window = closes.slice(-points);
+            const window = closes.slice(-cells);
             const first = window[0];
             const last = window[window.length - 1];
             const change = first !== undefined && last !== undefined && first !== 0
@@ -181,6 +199,7 @@ export class BtcTrendWidget implements Widget {
             SYMBOL_KEYBIND,
             { key: 'p', label: 's(p)an cycle', action: 'cycle-points' },
             { key: 'b', label: '(b)ar interval 1h/1d', action: 'cycle-interval' },
+            { key: 'w', label: '(w)idth cycle', action: 'cycle-width' },
             { key: 'v', label: 'style: candles/line (v)', action: 'cycle-style' },
             { key: 't', label: '(t)rend colors toggle', action: 'toggle-trend-colors' }
         ];

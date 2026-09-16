@@ -367,7 +367,8 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `g` | `change` | price | on - show the 24h change |
 | `p` | `points` | chart | `24` - bars of history, i.e. the span: `12/24/48/72` hourly, `7/14/30/60` daily. Braille packs two bars per cell, so 48 hourly bars draw 24 cells wide; candles and the sparkline are one cell per bar |
 | `b` | `bar` | chart | `1h` - or `1d` |
-| `v` | `style` | chart | `braille` - or `candles`, or `line` for a plain sparkline |
+| `v` | `style` | chart | `braille` - or `candles` (each cell colored by its own direction), or `line` for a plain sparkline |
+| `w` | `width` | chart | `12` cells - bars are merged into that many longer ones, the way zooming out on a chart does; `0` keeps one cell per bar |
 | `o` | `link` | advice | on - clickable report and `⟳` refresh |
 | `n` | `intervalMinutes` | advice | `30` |
 | `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |

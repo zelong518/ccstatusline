@@ -88,6 +88,40 @@ export function formatSignedPercent(change: number): string {
     return `${arrow}${Math.abs(change).toFixed(2)}%`;
 }
 
+/**
+ * Merge `bars` into `buckets` longer bars - the same thing a chart does when
+ * you zoom out: open of the first, close of the last, the extremes between.
+ * Fewer, wider cells beat one cell per hour, whose shape is mostly noise.
+ */
+export function aggregateBars(bars: readonly Bar[], buckets: number): Bar[] {
+    if (buckets <= 0 || bars.length === 0) {
+        return [];
+    }
+    if (bars.length <= buckets) {
+        return [...bars];
+    }
+
+    const out: Bar[] = [];
+    for (let index = 0; index < buckets; index++) {
+        const from = Math.floor(index * bars.length / buckets);
+        const to = Math.max(from + 1, Math.floor((index + 1) * bars.length / buckets));
+        const slice = bars.slice(from, to);
+        const first = slice[0];
+        const last = slice[slice.length - 1];
+        if (!first || !last) {
+            continue;
+        }
+        out.push({
+            t: first.t,
+            o: first.o,
+            c: last.c,
+            h: Math.max(...slice.map(bar => bar.h)),
+            l: Math.min(...slice.map(bar => bar.l))
+        });
+    }
+    return out;
+}
+
 /** Resample a series to exactly `count` points, nearest-neighbour. */
 function resample(values: readonly number[], count: number): number[] {
     if (values.length === 0 || count <= 0) {
@@ -206,7 +240,8 @@ export function formatAge(ageMs: number): string {
 }
 
 /**
- * Last `points` closes as block characters. A flat series draws mid-height
+ * Last `points` closes as block characters, scaled to the window's own low and
+ * high so a 1% move still uses the full height. A flat series draws mid-height
  * rather than dividing by a zero range.
  */
 export function sparkline(values: number[], points: number): string {

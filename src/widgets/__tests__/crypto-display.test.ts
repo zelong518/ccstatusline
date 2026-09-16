@@ -7,6 +7,7 @@ import {
 import type { Settings } from '../../types/Settings';
 import type { Bar } from '../../utils/btc';
 import {
+    aggregateBars,
     brailleline,
     candleline,
     formatAge,
@@ -126,5 +127,26 @@ describe('brailleline', () => {
 
     it('is empty for an empty series', () => {
         expect(brailleline([], 8, plain, 'ansi16')).toBe('');
+    });
+});
+
+describe('aggregateBars', () => {
+    const bar = (t: number, o: number, h: number, l: number, c: number): Bar => ({ t, o, h, l, c });
+    const series = [bar(1, 10, 12, 9, 11), bar(2, 11, 15, 10, 14), bar(3, 14, 14, 8, 9), bar(4, 9, 11, 7, 10)];
+
+    it('merges into longer bars: first open, last close, extremes between', () => {
+        expect(aggregateBars(series, 2)).toEqual([
+            { t: 1, o: 10, h: 15, l: 9, c: 14 },
+            { t: 3, o: 14, h: 14, l: 7, c: 10 }
+        ]);
+    });
+
+    it('leaves a series alone when it is already short enough', () => {
+        expect(aggregateBars(series, 8)).toEqual(series);
+    });
+
+    it('is empty for an empty series or a zero bucket count', () => {
+        expect(aggregateBars([], 4)).toEqual([]);
+        expect(aggregateBars(series, 0)).toEqual([]);
     });
 });
