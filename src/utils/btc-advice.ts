@@ -368,7 +368,7 @@ function buildUserPrompt(market: BtcMarketData, useNews: boolean): string {
         rsi14_daily: market.rsi14,
         rangePosition60d: market.rangePosition60d,
         fearGreed: market.fearGreed,
-        dailyCloses: barCloses(market.dailyBars).map(close => Math.round(close * 100) / 100)
+        dailyCloses: barCloses(market.dailyBars).slice(-30).map(close => Math.round(close * 100) / 100)
     };
 
     return [

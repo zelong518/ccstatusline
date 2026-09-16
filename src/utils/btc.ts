@@ -60,8 +60,8 @@ export interface BtcMarketData {
     ma30?: number;
     rsi14?: number;              // Wilder RSI on daily closes
     rangePosition60d?: number;   // 0 = 60d low, 100 = 60d high
-    hourlyBars: Bar[];           // oldest first, up to 48
-    dailyBars: Bar[];            // oldest first, up to 30
+    hourlyBars: Bar[];           // oldest first, up to 72
+    dailyBars: Bar[];            // oldest first, up to 60
     fearGreed?: FearGreedIndex;
 }
 
@@ -424,8 +424,8 @@ function buildMarketData(symbol: string, quote: RawQuote, fearGreed: FearGreedIn
         ma30: sma(dailyCloses, 30),
         rsi14: rsi(dailyCloses, 14),
         rangePosition60d: rangeSpan > 0 && low60d !== undefined ? (price - low60d) / rangeSpan * 100 : undefined,
-        hourlyBars: quote.hourlyBars.slice(-48),
-        dailyBars: quote.dailyBars.slice(-30),
+        hourlyBars: quote.hourlyBars.slice(-72),
+        dailyBars: quote.dailyBars.slice(-60),
         ...(fearGreed ? { fearGreed } : {})
     };
 }

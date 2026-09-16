@@ -34,8 +34,12 @@ import {
 import { isHidden } from './shared/hideable';
 
 const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'when the quote is unavailable' };
-const POINT_CHOICES = [8, 12, 16, 24, 30, 48];
-const DEFAULT_POINTS = 12;
+// `points` always means bars of history - the time span - whatever the style
+// draws with. Braille packs two bars per cell, so 48 hourly bars is 24 cells
+// wide; candles and the sparkline are one cell per bar.
+const HOURLY_POINT_CHOICES = [12, 24, 48, 72];
+const DAILY_POINT_CHOICES = [7, 14, 30, 60];
+const DEFAULT_POINTS = 24;
 const INTERVALS = ['1h', '1d'] as const;
 const STYLES = ['braille', 'candles', 'line'] as const;
 
@@ -53,11 +57,24 @@ function getStyle(item: WidgetItem): TrendStyle {
     return STYLES.find(choice => choice === style) ?? 'braille';
 }
 
+function getPointChoices(item: WidgetItem): number[] {
+    return getInterval(item) === '1d' ? DAILY_POINT_CHOICES : HOURLY_POINT_CHOICES;
+}
+
 function getPoints(item: WidgetItem): number {
+    const choices = getPointChoices(item);
     const raw = Number(item.metadata?.points);
-    const requested = POINT_CHOICES.includes(raw) ? raw : DEFAULT_POINTS;
-    // Daily bars are only kept 30 deep; asking for 48 of them would just pad
-    return getInterval(item) === '1d' ? Math.min(requested, 30) : requested;
+    if (choices.includes(raw)) {
+        return raw;
+    }
+    // A span carried over from the other interval: clamp into this one's range
+    const fallback = Number.isFinite(raw) ? raw : DEFAULT_POINTS;
+    return Math.min(choices[choices.length - 1] ?? DEFAULT_POINTS, Math.max(choices[0] ?? DEFAULT_POINTS, Math.round(fallback)));
+}
+
+/** e.g. `48h`, `30d` - the span the chart covers. */
+function getSpanLabel(item: WidgetItem): string {
+    return `${getPoints(item)}${getInterval(item) === '1d' ? 'd' : 'h'}`;
 }
 
 function cycle<T>(choices: readonly T[], current: T, fallback: T): T {
@@ -92,7 +109,7 @@ export class BtcTrendWidget implements Widget {
     getCategory(): string { return 'Crypto'; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        const modifiers = [getWidgetSymbol(item), `${getPoints(item)}x${getInterval(item)}`, getStyle(item)];
+        const modifiers = [getWidgetSymbol(item), getSpanLabel(item), getStyle(item)];
         if (getStyle(item) === 'line' && isTrendColorsEnabled(item)) {
             modifiers.push('trend colors');
         }
@@ -106,7 +123,7 @@ export class BtcTrendWidget implements Widget {
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         switch (action) {
             case 'cycle-points':
-                return withMetadata(item, 'points', String(cycle(POINT_CHOICES, getPoints(item), DEFAULT_POINTS)));
+                return withMetadata(item, 'points', String(cycle(getPointChoices(item), getPoints(item), DEFAULT_POINTS)));
             case 'cycle-interval':
                 return withMetadata(item, 'bar', cycle(INTERVALS, getInterval(item), '1h'));
             case 'cycle-style':
@@ -126,7 +143,8 @@ export class BtcTrendWidget implements Widget {
         const draw = (bars: Bar[]): string => {
             const closes = barCloses(bars);
             if (style === 'braille') {
-                return brailleline(closes, points, settings, colorLevel);
+                // two bars per cell, so the span drawn matches the other styles
+                return brailleline(closes.slice(-points), Math.ceil(points / 2), settings, colorLevel);
             }
             if (style === 'candles') {
                 return candleline(bars, points, settings, colorLevel);
@@ -161,7 +179,7 @@ export class BtcTrendWidget implements Widget {
     getCustomKeybinds(): CustomKeybind[] {
         return [
             SYMBOL_KEYBIND,
-            { key: 'p', label: '(p)oints cycle', action: 'cycle-points' },
+            { key: 'p', label: 's(p)an cycle', action: 'cycle-points' },
             { key: 'b', label: '(b)ar interval 1h/1d', action: 'cycle-interval' },
             { key: 'v', label: 'style: candles/line (v)', action: 'cycle-style' },
             { key: 't', label: '(t)rend colors toggle', action: 'toggle-trend-colors' }

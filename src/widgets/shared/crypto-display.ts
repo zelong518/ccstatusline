@@ -113,7 +113,7 @@ function resample(values: readonly number[], count: number): number[] {
  * full height - the point is the shape, not the absolute level.
  */
 export function brailleline(values: readonly number[], cells: number, settings: Settings, colorLevel: ColorLevelString): string {
-    const samples = resample(values.slice(-cells * 2), cells * 2);
+    const samples = resample(values, cells * 2);
     if (samples.length === 0) {
         return '';
     }
