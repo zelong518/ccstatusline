@@ -7,6 +7,7 @@ import {
 import type { Settings } from '../../types/Settings';
 import type { Bar } from '../../utils/btc';
 import {
+    brailleline,
     candleline,
     formatAge,
     formatPrice,
@@ -91,5 +92,30 @@ describe('candleline', () => {
 
     it('is empty for an empty series', () => {
         expect(candleline([], 12, plain, 'ansi16')).toBe('');
+    });
+});
+
+describe('brailleline', () => {
+    const plain = { colorLevel: 0 } as unknown as Settings;
+
+    it('draws one cell per requested point', () => {
+        expect(brailleline([1, 2, 3, 4, 5, 6, 7, 8], 4, plain, 'ansi16')).toHaveLength(4);
+    });
+
+    it('puts a rising series at the bottom on the left and the top on the right', () => {
+        const drawn = brailleline([1, 2, 3, 4, 5, 6, 7, 8], 4, plain, 'ansi16');
+        const first = drawn.charCodeAt(0) - 0x2800;
+        const last = drawn.charCodeAt(3) - 0x2800;
+        // Low values set the bottom dots (0x40/0x80), high values the top (0x01/0x08)
+        expect(first & 0xC0).not.toBe(0);
+        expect(last & 0x09).not.toBe(0);
+    });
+
+    it('keeps a flat series on one row instead of dividing by zero', () => {
+        expect(new Set(brailleline([5, 5, 5, 5], 2, plain, 'ansi16').split(''))).toHaveProperty('size', 1);
+    });
+
+    it('is empty for an empty series', () => {
+        expect(brailleline([], 8, plain, 'ansi16')).toBe('');
     });
 });

@@ -281,6 +281,25 @@ export function getBtcAdvice(item: WidgetItem, marketAvailable: boolean): BtcAdv
     return cached;
 }
 
+/**
+ * True while an ask is running. The refresh lock is held for exactly that
+ * window, so the status line can say "asking" instead of looking frozen for
+ * the ~30s a news-searching ask takes.
+ */
+export function isAskInFlight(symbol: string, advice: BtcAdvice | null): boolean {
+    try {
+        const lockedAt = statSync(getLockFile(symbol)).mtimeMs;
+        if (Date.now() - lockedAt >= REFRESH_LOCK_STALE_MS) {
+            return false;
+        }
+        // A lock older than the answer belongs to the ask that already wrote it:
+        // the child died before releasing it, so nothing is running.
+        return advice === null || lockedAt > advice.askedAt;
+    } catch {
+        return false;
+    }
+}
+
 export function hasBtcAdviceWidgets(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => item.type === BTC_ADVICE_WIDGET_TYPE));
 }

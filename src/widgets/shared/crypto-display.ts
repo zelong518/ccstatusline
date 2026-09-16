@@ -17,6 +17,18 @@ const TREND_COLOR_SPECS: Record<TrendColorKey, Record<ColorLevelString, string>>
 };
 
 const SPARKLINE_BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+// Braille cells carry 2 columns x 4 rows of dots, so a row of them draws a
+// line chart at four times the vertical resolution of the block glyphs - which
+// is what makes a trend legible when the whole move is a couple of percent.
+// Bit per (column, row), rows top-down; see U+2800 dot numbering.
+const BRAILLE_DOT_BITS: readonly (readonly number[])[] = [
+    [0x01, 0x08],
+    [0x02, 0x10],
+    [0x04, 0x20],
+    [0x40, 0x80]
+];
+const BRAILLE_ROWS = BRAILLE_DOT_BITS.length;
 const TREND_COLORS_METADATA_KEY = 'colors';
 
 export function getTrendFgCode(key: TrendColorKey, colorLevel: ColorLevelString): string {
@@ -76,6 +88,74 @@ export function formatSignedPercent(change: number): string {
     return `${arrow}${Math.abs(change).toFixed(2)}%`;
 }
 
+/** Resample a series to exactly `count` points, nearest-neighbour. */
+function resample(values: readonly number[], count: number): number[] {
+    if (values.length === 0 || count <= 0) {
+        return [];
+    }
+    if (values.length === count) {
+        return [...values];
+    }
+
+    return Array.from({ length: count }, (unused, index) => {
+        const source = Math.round(index * (values.length - 1) / Math.max(1, count - 1));
+        return values[Math.min(values.length - 1, source)] ?? 0;
+    });
+}
+
+/**
+ * A line chart in one row of braille, two samples per cell, drawn as a
+ * connected line (the span between consecutive samples is filled, so the line
+ * never breaks into floating dots). One color for the whole line, from its net
+ * move: coloring each cell by its own slope turns a trend into confetti.
+ *
+ * The vertical range is the series' own min-max, so a 1% move still uses the
+ * full height - the point is the shape, not the absolute level.
+ */
+export function brailleline(values: readonly number[], cells: number, settings: Settings, colorLevel: ColorLevelString): string {
+    const samples = resample(values.slice(-cells * 2), cells * 2);
+    if (samples.length === 0) {
+        return '';
+    }
+
+    const min = Math.min(...samples);
+    const max = Math.max(...samples);
+    const span = max - min;
+    // Row 0 is the top; a flat series sits in the middle
+    const rowOf = (value: number): number => (span > 0
+        ? Math.min(BRAILLE_ROWS - 1, Math.max(0, Math.round((max - value) / span * (BRAILLE_ROWS - 1))))
+        : Math.floor(BRAILLE_ROWS / 2));
+
+    let glyphs = '';
+    for (let cell = 0; cell < cells; cell++) {
+        let bits = 0;
+        for (let column = 0; column < 2; column++) {
+            const index = cell * 2 + column;
+            const value = samples[index];
+            if (value === undefined) {
+                continue;
+            }
+
+            const row = rowOf(value);
+            const previous = samples[index - 1];
+            const previousRow = previous === undefined ? row : rowOf(previous);
+            // Fill from the previous sample's row to this one so the line connects
+            for (let r = Math.min(row, previousRow); r <= Math.max(row, previousRow); r++) {
+                bits |= BRAILLE_DOT_BITS[r]?.[column] ?? 0;
+            }
+        }
+
+        glyphs += String.fromCharCode(0x2800 + bits);
+    }
+
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    const netChange = first !== undefined && last !== undefined && first !== 0
+        ? (last - first) / first * 100
+        : undefined;
+    return colorizeTrend(glyphs, trendKeyForChange(netChange), settings, colorLevel);
+}
+
 /**
  * A candle chart in one row of text. A cell cannot hold a body and both wicks,
  * so each bar keeps the two things a glance is actually for: height places the
@@ -88,8 +168,10 @@ export function candleline(bars: readonly Bar[], points: number, settings: Setti
         return '';
     }
 
-    const high = Math.max(...window.map(bar => bar.h));
-    const low = Math.min(...window.map(bar => bar.l));
+    // Scale to the candle bodies, not the wicks: one spike low would otherwise
+    // squash every body into the same two glyph levels.
+    const high = Math.max(...window.map(bar => Math.max(bar.o, bar.c)));
+    const low = Math.min(...window.map(bar => Math.min(bar.o, bar.c)));
     const span = high - low;
     const midBlock = SPARKLINE_BLOCKS[Math.floor(SPARKLINE_BLOCKS.length / 2)] ?? '▄';
 

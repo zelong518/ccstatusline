@@ -304,7 +304,7 @@ This fork adds a `Crypto` widget category: a live spot price, an hourly sparklin
 | Widget | Type | Shows |
 | --- | --- | --- |
 | Crypto Price | `btc-price` | `BTC $75,703 ▼1.66%` - spot price and 24h change |
-| Crypto Chart | `btc-trend` | `▄▅▄▃▃▃▄▃▄▄▄▄▄▃▃▄` - one cell per candle, height = close in the window's range, color = that bar's direction |
+| Crypto Chart | `btc-trend` | `⠒⠒⠚⠉⠉⠙⠒⠒⠲⠤⢤⣤⣀⣀` - a braille line at 2x4 dots per cell, or candles (`▄▅▄▃▃▄▆`), or a plain sparkline |
 | Crypto Advice | `btc-advice` | `Advice: HOLD 55 · 12m ⟳` - clickable: opens the full report, `⟳` re-asks now |
 
 Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds under `~/.cache/ccstatusline/`. A venue that stops answering gets a 30-second backoff instead of a network round trip per render, and the last good quote keeps being drawn.
@@ -346,6 +346,16 @@ BTCUSDT  HOLD  confidence 55
   Not investment advice.
 ```
 
+### Keeping it moving
+
+Claude Code redraws the status line on events, so between two messages a price and an age both sit still. `refreshInterval` in the `statusLine` block fixes that:
+
+```json
+"statusLine": { "type": "command", "command": "ccstatusline", "refreshInterval": 5 }
+```
+
+While an ask is running the verdict shows `· asking…` rather than an age, so a click on `⟳` visibly does something during the ~30s it takes.
+
 ### Options
 
 Press the listed key on the widget in the TUI, or set `metadata` directly in `settings.json`:
@@ -357,7 +367,7 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `g` | `change` | price | on - show the 24h change |
 | `p` | `points` | chart | `12` candles |
 | `b` | `bar` | chart | `1h` - or `1d` |
-| `v` | `style` | chart | `candles` - or `line` for a plain sparkline |
+| `v` | `style` | chart | `braille` - or `candles`, or `line` for a plain sparkline |
 | `o` | `link` | advice | on - clickable report and `⟳` refresh |
 | `n` | `intervalMinutes` | advice | `30` |
 | `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |

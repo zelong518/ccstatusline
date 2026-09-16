@@ -18,6 +18,7 @@ import {
 } from '../utils/btc';
 
 import {
+    brailleline,
     candleline,
     colorizeTrend,
     isTrendColorsEnabled,
@@ -36,7 +37,7 @@ const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'when the
 const POINT_CHOICES = [8, 12, 16, 24, 30, 48];
 const DEFAULT_POINTS = 12;
 const INTERVALS = ['1h', '1d'] as const;
-const STYLES = ['candles', 'line'] as const;
+const STYLES = ['braille', 'candles', 'line'] as const;
 
 type Interval = typeof INTERVALS[number];
 type TrendStyle = typeof STYLES[number];
@@ -45,9 +46,11 @@ function getInterval(item: WidgetItem): Interval {
     return item.metadata?.bar === '1d' ? '1d' : '1h';
 }
 
-/** Candles are the default: direction per bar is what a glance is for. */
+/** Braille is the default: at a couple of percent of movement it is the only
+ *  one of the three whose shape is actually readable. */
 function getStyle(item: WidgetItem): TrendStyle {
-    return item.metadata?.style === 'line' ? 'line' : 'candles';
+    const style = item.metadata?.style;
+    return STYLES.find(choice => choice === style) ?? 'braille';
 }
 
 function getPoints(item: WidgetItem): number {
@@ -84,7 +87,7 @@ const PREVIEW_BARS: Bar[] = [3, 5, 4, 6, 8, 7, 9, 12, 11, 14, 13, 16].map((close
 
 export class BtcTrendWidget implements Widget {
     getDefaultColor(): string { return 'cyan'; }
-    getDescription(): string { return 'Shows a candle (or line) chart of recent price action for a crypto pair'; }
+    getDescription(): string { return 'Shows a braille line, candle or sparkline chart of recent price action'; }
     getDisplayName(): string { return 'Crypto Chart'; }
     getCategory(): string { return 'Crypto'; }
 
@@ -107,7 +110,7 @@ export class BtcTrendWidget implements Widget {
             case 'cycle-interval':
                 return withMetadata(item, 'bar', cycle(INTERVALS, getInterval(item), '1h'));
             case 'cycle-style':
-                return withMetadata(item, 'style', cycle(STYLES, getStyle(item), 'candles'));
+                return withMetadata(item, 'style', cycle(STYLES, getStyle(item), 'braille'));
             case 'toggle-trend-colors':
                 return toggleTrendColors(item);
             default:
@@ -121,11 +124,14 @@ export class BtcTrendWidget implements Widget {
         const style = getStyle(item);
 
         const draw = (bars: Bar[]): string => {
+            const closes = barCloses(bars);
+            if (style === 'braille') {
+                return brailleline(closes, points, settings, colorLevel);
+            }
             if (style === 'candles') {
                 return candleline(bars, points, settings, colorLevel);
             }
 
-            const closes = barCloses(bars);
             const line = sparkline(closes, points);
             if (!isTrendColorsEnabled(item)) {
                 return line;
@@ -166,9 +172,10 @@ export class BtcTrendWidget implements Widget {
         return props.action === EDIT_SYMBOL_ACTION ? <CryptoSymbolEditor {...props} /> : null;
     }
 
-    // Candles carry a color per bar; the line only when trend colors are on
+    // Braille and candles carry a color per cell; the plain line only when
+    // trend colors are switched on
     preservesRenderedColors(item: WidgetItem): boolean {
-        return getStyle(item) === 'candles' || isTrendColorsEnabled(item);
+        return getStyle(item) !== 'line' || isTrendColorsEnabled(item);
     }
 
     supportsRawValue(): boolean { return false; }

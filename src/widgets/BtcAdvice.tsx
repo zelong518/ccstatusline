@@ -22,6 +22,7 @@ import {
     getAdviceModel,
     getBtcAdvice,
     getVerdictLabel,
+    isAskInFlight,
     isNewsEnabled
 } from '../utils/btc-advice';
 import {
@@ -174,6 +175,7 @@ export class BtcAdviceWidget implements Widget {
 
         // Starting the report server costs one render: the first call spawns it
         // and returns nothing, so the text simply goes out unlinked that once.
+        const asking = isAskInFlight(symbol, advice);
         const port = areLinksEnabled(item) ? ensureReportServer() : null;
         const link = (text: string, refresh: boolean): string => (port === null ? text : renderOsc8Link(getReportUrl(symbol, port, refresh), text));
         const withRefreshButton = (text: string): string => (port === null ? text : `${text} ${link(REFRESH_GLYPH, true)}`);
@@ -193,7 +195,10 @@ export class BtcAdviceWidget implements Widget {
         if (isConfidenceShown(item) && advice.confidence !== undefined) {
             parts.push(String(advice.confidence));
         }
-        if (isAgeShown(item)) {
+        if (asking) {
+            // An ask is running right now; its age matters more than the old one's
+            parts.push(language === 'zh' ? '· 询问中…' : '· asking…');
+        } else if (isAgeShown(item)) {
             parts.push(`· ${formatAge(Date.now() - advice.askedAt)}`);
         }
         const detail = getDetailText(advice, getDetailMode(item));
