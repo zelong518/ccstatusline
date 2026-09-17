@@ -372,6 +372,19 @@ ccstatusline --btc-score BTCUSDT     # the whole record, horizon by horizon
 
 The report page carries the same table plus the recent calls, each with what the price did and the catalyst that was cited at the time. Scoring runs in the background when a horizon comes due; nothing blocks the render.
 
+### Is the verdict worth trading?
+
+`scripts/btc-backtest.ts` rebuilds the snapshot the widget would have sent at every half hour - from that moment's candles only - asks the same model through the same prompt, and settles each call against the next half-hourly close.
+
+```bash
+bun run scripts/btc-backtest.ts --bars 96 --concurrency 6   # replay 48h of decisions
+bun run scripts/btc-backtest.ts --stability 10              # ask one snapshot ten times
+```
+
+News search is off in a replay: a model searching today would read reports written after the moment it is being asked about, and grade itself on the future.
+
+Two things a first run makes obvious, and they are the reason the default interval is what it is. The ask is fed **daily** series - MA7/MA30, daily RSI, thirty daily closes - which barely move in thirty minutes, so consecutive calls carry no new information. And `--stability` shows the same snapshot answered ten times does not give the same answer ten times. On a 48h replay the verdict changed between adjacent half hours 24% of the time, while pure resampling of one fixed snapshot changes it ~32% of the time: every bit of the half-hourly variation is the model's own noise. Trading on it pays fees for that noise - 0.5% of the position in two days at spot taker rates, before being right about anything.
+
 ### Options
 
 Press the listed key on the widget in the TUI, or set `metadata` directly in `settings.json`:

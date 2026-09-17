@@ -373,7 +373,7 @@ function buildUserPrompt(market: BtcMarketData, useNews: boolean): string {
     };
 
     return [
-        `Today is ${new Date().toISOString().slice(0, 10)} (UTC). Live snapshot of ${market.symbol}`,
+        `Today is ${new Date(market.fetchedAt).toISOString().slice(0, 10)} (UTC). Live snapshot of ${market.symbol}`,
         '(dailyCloses = last 30 daily closes, oldest first; MA and RSI are daily):',
         JSON.stringify(snapshot),
         useNews
@@ -412,30 +412,98 @@ function traceRawAnswer(raw: string): string {
     return raw;
 }
 
-function askClaude(market: BtcMarketData, model: string, language: AdviceLanguage, useNews: boolean): string {
-    const binary = resolveClaudeBinary();
-    const baseArgs = [
+/** The flags for one ask; shared so the async path cannot drift from the real one. */
+function buildAskArgs(model: string, language: AdviceLanguage, useNews: boolean): string[] {
+    return [
         '-p',
         '--model', model,
         '--output-format', 'json',
-        '--system-prompt', buildSystemPrompt(language, useNews)
+        '--system-prompt', buildSystemPrompt(language, useNews),
+        // --restricted keeps Bash/Edit/REPL out of the ask; the search tools
+        // are allowlisted explicitly so headless mode never stops to ask.
+        '--restricted',
+        '--no-session-persistence',
+        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+        ...(useNews ? ['--allowedTools', 'WebSearch,WebFetch'] : [])
     ];
+}
+
+function askClaude(market: BtcMarketData, model: string, language: AdviceLanguage, useNews: boolean): string {
+    const binary = resolveClaudeBinary();
     const userPrompt = buildUserPrompt(market, useNews);
 
     try {
-        return traceRawAnswer(runClaude(binary, [
-            ...baseArgs,
-            // --restricted keeps Bash/Edit/REPL out of the ask; the search tools
-            // are allowlisted explicitly so headless mode never stops to ask.
-            '--restricted',
-            '--no-session-persistence',
-            '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-            ...(useNews ? ['--allowedTools', 'WebSearch,WebFetch'] : [])
-        ], userPrompt));
+        return traceRawAnswer(runClaude(binary, buildAskArgs(model, language, useNews), userPrompt));
     } catch {
         // An older claude may not know those flags; retry with the portable set.
-        return traceRawAnswer(runClaude(binary, baseArgs, userPrompt));
+        const portable = ['-p', '--model', model, '--output-format', 'json', '--system-prompt', buildSystemPrompt(language, useNews)];
+        return traceRawAnswer(runClaude(binary, portable, userPrompt));
     }
+}
+
+/**
+ * The same ask without blocking the event loop. Production does one ask per
+ * detached process and can afford the synchronous call; a backtest running
+ * hundreds of them cannot - execFileSync would serialize every worker.
+ */
+function runClaudeAsync(binary: string, args: string[], prompt: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(binary, args, {
+            cwd: CACHE_DIR,
+            windowsHide: true,
+            env: { ...process.env, CCSTATUSLINE_BTC_ADVICE: '1' }
+        });
+
+        let stdout = '';
+        let settled = false;
+        const finish = (error: Error | null): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            if (error) {
+                reject(error);
+            } else {
+                resolve(stdout);
+            }
+        };
+
+        const timer = setTimeout(() => {
+            child.kill('SIGKILL');
+            finish(new Error('ask timed out'));
+        }, ASK_TIMEOUT_MS);
+
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', (chunk: string) => {
+            stdout += chunk;
+        });
+        child.on('error', finish);
+        child.on('close', (code) => {
+            finish(code === 0 ? null : new Error(`claude exited ${String(code)}`));
+        });
+        child.stdin.end(prompt);
+    });
+}
+
+export function askMarketSnapshot(
+    market: BtcMarketData,
+    model: string,
+    language: AdviceLanguage,
+    useNews: boolean
+): ReturnType<typeof parseAdviceResponse> {
+    return parseAdviceResponse(askClaude(market, model, language, useNews));
+}
+
+/** Async twin of askMarketSnapshot, for callers that run many asks at once. */
+export async function askMarketSnapshotAsync(
+    market: BtcMarketData,
+    model: string,
+    language: AdviceLanguage,
+    useNews: boolean
+): Promise<ReturnType<typeof parseAdviceResponse>> {
+    const raw = await runClaudeAsync(resolveClaudeBinary(), buildAskArgs(model, language, useNews), buildUserPrompt(market, useNews));
+    return parseAdviceResponse(raw);
 }
 
 function normalizeSources(raw: unknown): string[] {
