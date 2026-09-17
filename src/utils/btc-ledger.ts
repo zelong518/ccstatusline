@@ -27,7 +27,7 @@ import { getConfigPath } from './config';
 const LEDGER_VERSION = 1;
 const MAX_ENTRIES = 3000;
 const DEFAULT_THRESHOLD_PERCENT = 2;      // a move smaller than this is "flat"
-const DEFAULT_SAMPLE_HOURS = 6;           // stats keep one call per this window
+const DEFAULT_SAMPLE_HOURS = 4;           // stats keep one call per this window, matching the ask interval
 const MIN_SAMPLE_FOR_RATE = 5;
 const MAX_KLINES_PER_REQUEST = 1000;
 

@@ -39,7 +39,12 @@ import { appendPrediction } from './btc-ledger';
 // executable (the pattern git-review-cache uses) and the widget keeps drawing the
 // previous verdict until that child lands a new one.
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'ccstatusline');
-const DEFAULT_INTERVAL_MINUTES = 30;
+// Four hours, not the half hour this started at. A replay of 96 half-hourly
+// decisions (scripts/btc-backtest.ts) found consecutive calls disagreeing 24%
+// of the time while re-asking one fixed snapshot disagrees ~32% of the time:
+// nothing in the half-hourly variation was the market. The series the ask reads
+// are daily anyway, so this is the rate at which its input actually moves.
+const DEFAULT_INTERVAL_MINUTES = 240;
 const MIN_INTERVAL_MINUTES = 5;
 const MAX_INTERVAL_MINUTES = 24 * 60;
 const FAILURE_RETRY_SECONDS = 300;   // a failed ask retries sooner than the interval

@@ -48,7 +48,7 @@ import { isHidden } from './shared/hideable';
 
 const LABEL = 'Advice: ';
 const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'until the first answer arrives' };
-const INTERVAL_CHOICES = [15, 30, 60, 120, 360];
+const INTERVAL_CHOICES = [30, 60, 120, 240, 360, 720];
 const REFRESH_GLYPH = '⟳';
 const DETAIL_CHOICES = ['none', 'catalyst', 'reason'] as const;
 const TIME_CHOICES = ['none', 'clock', 'age', 'both'] as const;
@@ -147,7 +147,7 @@ export class BtcAdviceWidget implements Widget {
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         switch (action) {
             case 'cycle-interval':
-                return withMetadata(item, 'intervalMinutes', String(cycleFrom(INTERVAL_CHOICES, getAdviceIntervalMinutes(item), 30)));
+                return withMetadata(item, 'intervalMinutes', String(cycleFrom(INTERVAL_CHOICES, getAdviceIntervalMinutes(item), 240)));
             case 'toggle-confidence':
                 return withMetadata(item, 'confidence', isConfidenceShown(item) ? 'false' : 'true');
             case 'cycle-time':

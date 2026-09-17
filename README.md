@@ -312,7 +312,7 @@ Quotes come from Binance, with OKX as a fallback, and are cached for 60 seconds 
 
 ### How the advice works
 
-A crash usually has a story behind it - a CPI print, an FOMC decision, an ETF flow, a post from someone the market listens to - so the ask does not look at the chart alone. Every `intervalMinutes` (default 30) the widget spawns a **detached** `claude -p`, which:
+A crash usually has a story behind it - a CPI print, an FOMC decision, an ETF flow, a post from someone the market listens to - so the ask does not look at the chart alone. Every `intervalMinutes` (default 240, i.e. four hours - see below) the widget spawns a **detached** `claude -p`, which:
 
 1. searches the news of the last 24-48 hours for what is moving the asset (`WebSearch` and `WebFetch` are allowlisted; `--restricted` keeps Bash, Edit and the other execution tools out of it),
 2. names the dominant driver, with up to three source domains,
@@ -399,7 +399,7 @@ Press the listed key on the widget in the TUI, or set `metadata` directly in `se
 | `v` | `style` | chart | `braille` - or `candles` (each cell colored by its own direction), or `line` for a plain sparkline |
 | `w` | `width` | chart | `12` cells - bars are merged into that many longer ones, the way zooming out on a chart does; `0` keeps one cell per bar |
 | `o` | `link` | advice | on - clickable report and `⟳` refresh |
-| `n` | `intervalMinutes` | advice | `30` |
+| `n` | `intervalMinutes` | advice | `240` (4h) |
 | `s` | `news` | advice | on - turn it off for a cheaper chart-only ask |
 | `w` | `detail` | advice | `none` - or `catalyst` / `reason` inline |
 | `f` | `confidence` | advice | on |
